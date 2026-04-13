@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>VideoChamada WebRTC</title>
     <style>
         * {
@@ -34,9 +34,21 @@
             text-align: center;
         }
 
+        .header h1 {
+            font-size: 24px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        /* Tela de entrada */
         .join-screen {
             padding: 40px;
             text-align: center;
+            display: block;
         }
 
         .join-card {
@@ -45,6 +57,12 @@
             background: #f8f9fa;
             padding: 30px;
             border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .join-card h2 {
+            margin-bottom: 20px;
+            color: #333;
         }
 
         .join-card input {
@@ -54,6 +72,12 @@
             border: 2px solid #ddd;
             border-radius: 8px;
             font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .join-card input:focus {
+            outline: none;
+            border-color: #667eea;
         }
 
         .join-card button {
@@ -65,9 +89,20 @@
             border: none;
             border-radius: 8px;
             font-size: 16px;
+            font-weight: 600;
             cursor: pointer;
+            transition: transform 0.2s;
         }
 
+        .join-card button:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: #6c757d !important;
+        }
+
+        /* Tela da chamada */
         .call-screen {
             display: none;
             padding: 20px;
@@ -86,6 +121,7 @@
             border-radius: 10px;
             overflow: hidden;
             aspect-ratio: 16/9;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
 
         .video-container video {
@@ -102,7 +138,8 @@
             color: white;
             padding: 5px 10px;
             border-radius: 5px;
-            font-size: 14px;
+            font-size: 12px;
+            font-weight: 500;
         }
 
         .controls {
@@ -120,6 +157,8 @@
             font-size: 24px;
             cursor: pointer;
             transition: all 0.3s;
+            background: #f0f0f0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
         .controls button:hover {
@@ -138,19 +177,34 @@
             background: #f8f9fa;
             border-radius: 8px;
             font-size: 14px;
+            color: #666;
         }
 
-        .waiting-message {
-            text-align: center;
-            padding: 20px;
-            background: #fff3cd;
-            border-radius: 8px;
-            margin-top: 20px;
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
         }
 
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        /* Responsivo */
         @media (max-width: 768px) {
             .videos {
                 grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .join-screen {
+                padding: 20px;
+            }
+            
+            .controls button {
+                width: 50px;
+                height: 50px;
+                font-size: 20px;
             }
         }
     </style>
@@ -159,16 +213,17 @@
     <div class="container">
         <div class="header">
             <h1>🎥 VideoChamada WebRTC</h1>
+            <p>Comunicação em tempo real com áudio e vídeo</p>
         </div>
 
         <!-- Tela de entrada -->
         <div id="joinScreen" class="join-screen">
             <div class="join-card">
-                <h2>Entrar na VideoChamada</h2>
-                <input type="text" id="roomId" placeholder="ID da Sala" autocomplete="off">
+                <h2>📞 Entrar na VideoChamada</h2>
+                <input type="text" id="roomId" placeholder="ID da Sala (ex: sala123)" autocomplete="off">
                 <input type="text" id="userName" placeholder="Seu Nome" autocomplete="off">
-                <button onclick="joinRoom()">Entrar na Sala</button>
-                <button onclick="createRoom()" style="background: #6c757d;">Criar Nova Sala</button>
+                <button onclick="joinRoom()">🚀 Entrar na Sala</button>
+                <button onclick="createRoom()" class="btn-secondary">✨ Criar Nova Sala</button>
             </div>
         </div>
 
@@ -177,78 +232,113 @@
             <div class="videos">
                 <div class="video-container">
                     <video id="localVideo" autoplay muted playsinline></video>
-                    <div class="video-label" id="localLabel">Você</div>
+                    <div class="video-label" id="localLabel">👤 Você</div>
                 </div>
                 <div class="video-container">
                     <video id="remoteVideo" autoplay playsinline></video>
-                    <div class="video-label" id="remoteLabel">Aguardando...</div>
+                    <div class="video-label" id="remoteLabel">🟡 Aguardando...</div>
                 </div>
             </div>
             <div class="controls">
-                <button onclick="toggleAudio()" id="audioBtn">🎤</button>
-                <button onclick="toggleVideo()" id="videoBtn">📹</button>
-                <button onclick="hangUp()" class="btn-danger">📞</button>
+                <button onclick="toggleAudio()" id="audioBtn" title="Ligar/Desligar Microfone">🎤</button>
+                <button onclick="toggleVideo()" id="videoBtn" title="Ligar/Desligar Câmera">📹</button>
+                <button onclick="hangUp()" class="btn-danger" title="Encerrar Chamada">📞</button>
             </div>
-            <div id="status" class="status">Conectando...</div>
+            <div id="status" class="status">🟡 Inicializando...</div>
         </div>
     </div>
 
+    <!-- Socket.IO client -->
     <script src="/socket.io/socket.io.js"></script>
+    
     <script>
-        // Configuração do WebRTC
+        // ==================== CONFIGURAÇÕES ====================
         const configuration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
             ]
         };
 
-        // Variáveis globais
-        let socket;
-        let localStream;
-        let peerConnections = {}; // Múltiplas conexões
+        // ==================== VARIÁVEIS GLOBAIS ====================
+        let socket = null;
+        let localStream = null;
+        let peerConnections = {};
         let currentRoom = null;
         let currentUser = null;
         let audioEnabled = true;
         let videoEnabled = true;
 
-        // Gerar ID único
+        // ==================== FUNÇÕES AUXILIARES ====================
         function generateId() {
             return Math.random().toString(36).substring(2, 10);
         }
 
-        // Criar nova sala
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status';
+            if (isError) {
+                statusDiv.classList.add('error');
+            } else if (message.includes('Conectado') || message.includes('andamento')) {
+                statusDiv.classList.add('connected');
+            }
+            console.log('Status:', message);
+        }
+
+        // ==================== CRIAÇÃO DE SALA ====================
         function createRoom() {
             const roomId = generateId();
             document.getElementById('roomId').value = roomId;
-            alert(`Sala criada: ${roomId}\nCompartilhe este código com a outra pessoa!`);
+            updateStatus(`✅ Sala criada: ${roomId}. Compartilhe este código!`, false);
+            alert(`✨ Sala criada: ${roomId}\n\nCompartilhe este código com a pessoa que você quer chamar!`);
         }
 
-        // Entrar na sala
+        // ==================== ENTRAR NA SALA ====================
         async function joinRoom() {
             const roomId = document.getElementById('roomId').value.trim();
             const userName = document.getElementById('userName').value.trim();
 
-            if (!roomId || !userName) {
-                alert('Preencha o ID da sala e seu nome!');
+            if (!roomId) {
+                alert('❌ Digite o ID da sala!');
+                return;
+            }
+
+            if (!userName) {
+                alert('❌ Digite seu nome!');
                 return;
             }
 
             currentRoom = roomId;
             currentUser = userName;
 
+            updateStatus('🟡 Conectando ao servidor...');
+
             try {
-                // Conectar ao servidor
-                socket = io();
-                
+                // Conectar ao Socket.IO com configuração para o Render
+                socket = io({
+                    transports: ['websocket', 'polling'],
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000,
+                    timeout: 20000
+                });
+
                 // Configurar eventos do socket
                 setupSocketEvents();
-                
+
                 // Capturar mídia local
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localStream = stream;
-                document.getElementById('localVideo').srcObject = stream;
+                updateStatus('🎥 Solicitando acesso à câmera/microfone...');
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('localLabel').textContent = `👤 ${userName}`;
                 
                 // Mostrar tela da chamada
                 document.getElementById('joinScreen').style.display = 'none';
@@ -256,75 +346,100 @@
                 
                 // Entrar na sala
                 socket.emit('join-room', roomId, socket.id);
-                
-                updateStatus('Aguardando outro usuário...');
+                updateStatus('🟡 Aguardando outro usuário entrar na sala...');
                 
             } catch (error) {
                 console.error('Erro:', error);
-                alert('Erro ao acessar câmera/microfone. Verifique as permissões!');
+                let errorMsg = 'Erro ao acessar câmera/microfone. ';
+                if (error.name === 'NotAllowedError') {
+                    errorMsg += 'Você precisa permitir o acesso à câmera e microfone.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg += 'Nenhuma câmera ou microfone encontrado.';
+                } else {
+                    errorMsg += error.message;
+                }
+                alert(errorMsg);
+                updateStatus('❌ ' + errorMsg, true);
             }
         }
 
-        // Configurar eventos do socket
+        // ==================== EVENTOS DO SOCKET ====================
         function setupSocketEvents() {
-            // Usuários existentes na sala
+            socket.on('connect', () => {
+                console.log('✅ Conectado ao servidor');
+                updateStatus('🟡 Conectado ao servidor. Aguardando usuário...');
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Erro de conexão:', error);
+                updateStatus('❌ Erro de conexão com o servidor', true);
+            });
+
             socket.on('existing-users', (users) => {
-                console.log('Usuários existentes:', users);
+                console.log('Usuários existentes na sala:', users);
                 users.forEach(userId => {
                     createPeerConnection(userId);
                     initiateCall(userId);
                 });
             });
 
-            // Novo usuário conectou
             socket.on('user-connected', (userId) => {
-                console.log('Novo usuário conectado:', userId);
+                console.log('👤 Novo usuário conectado:', userId);
+                updateStatus('🟢 Novo usuário conectado! Estabelecendo conexão...');
                 createPeerConnection(userId);
                 initiateCall(userId);
             });
 
-            // Receber offer
             socket.on('offer', async ({ offer, from }) => {
-                console.log('Recebendo offer de:', from);
+                console.log('📞 Recebendo offer de:', from);
                 if (!peerConnections[from]) {
                     createPeerConnection(from);
                 }
-                await peerConnections[from].setRemoteDescription(new RTCSessionDescription(offer));
-                const answer = await peerConnections[from].createAnswer();
-                await peerConnections[from].setLocalDescription(answer);
-                socket.emit('answer', { answer, to: from, from: socket.id });
+                try {
+                    await peerConnections[from].setRemoteDescription(new RTCSessionDescription(offer));
+                    const answer = await peerConnections[from].createAnswer();
+                    await peerConnections[from].setLocalDescription(answer);
+                    socket.emit('answer', { answer, to: from, from: socket.id });
+                } catch (error) {
+                    console.error('Erro ao processar offer:', error);
+                }
             });
 
-            // Receber answer
             socket.on('answer', async ({ answer, from }) => {
-                console.log('Recebendo answer de:', from);
+                console.log('📞 Recebendo answer de:', from);
                 if (peerConnections[from]) {
-                    await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+                    try {
+                        await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+                    } catch (error) {
+                        console.error('Erro ao processar answer:', error);
+                    }
                 }
             });
 
-            // Receber ICE candidate
             socket.on('ice-candidate', async ({ candidate, from }) => {
-                console.log('Recebendo ICE candidate de:', from);
+                console.log('❄️ Recebendo ICE candidate de:', from);
                 if (peerConnections[from]) {
-                    await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                    try {
+                        await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (error) {
+                        console.error('Erro ao adicionar ICE candidate:', error);
+                    }
                 }
             });
 
-            // Usuário desconectou
             socket.on('user-disconnected', (userId) => {
-                console.log('Usuário desconectado:', userId);
+                console.log('🔴 Usuário desconectado:', userId);
                 if (peerConnections[userId]) {
                     peerConnections[userId].close();
                     delete peerConnections[userId];
                 }
                 document.getElementById('remoteVideo').srcObject = null;
-                document.getElementById('remoteLabel').textContent = 'Usuário desconectado';
-                updateStatus('Usuário desconectado. Aguardando reconexão...');
+                document.getElementById('remoteLabel').textContent = '🔴 Desconectado';
+                updateStatus('🔴 O outro usuário saiu da chamada. Aguardando...');
             });
         }
 
-        // Criar conexão peer
+        // ==================== WEBRTC PEER CONNECTION ====================
         function createPeerConnection(userId) {
             const peerConnection = new RTCPeerConnection(configuration);
             
@@ -337,13 +452,13 @@
             
             // Receber streams remotas
             peerConnection.ontrack = (event) => {
-                console.log('Recebendo stream remota de:', userId);
+                console.log('📺 Recebendo stream remota de:', userId);
                 document.getElementById('remoteVideo').srcObject = event.streams[0];
-                document.getElementById('remoteLabel').textContent = 'Conectado';
-                updateStatus('Chamada em andamento!');
+                document.getElementById('remoteLabel').textContent = '🟢 Conectado';
+                updateStatus('🟢 Chamada em andamento!');
             };
             
-            // ICE candidates
+            // Enviar ICE candidates
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit('ice-candidate', {
@@ -354,13 +469,15 @@
                 }
             };
             
-            // Monitorar conexão
+            // Monitorar estado da conexão
             peerConnection.onconnectionstatechange = () => {
-                console.log(`Conexão com ${userId}:`, peerConnection.connectionState);
+                console.log(`🔌 Estado da conexão com ${userId}:`, peerConnection.connectionState);
                 if (peerConnection.connectionState === 'connected') {
-                    updateStatus('Conectado!');
+                    updateStatus('🟢 Conectado! Chamada em andamento.');
                 } else if (peerConnection.connectionState === 'failed') {
-                    updateStatus('Falha na conexão');
+                    updateStatus('❌ Falha na conexão. Tente novamente.', true);
+                } else if (peerConnection.connectionState === 'disconnected') {
+                    updateStatus('🟡 Conexão perdida. Tentando reconectar...');
                 }
             };
             
@@ -368,44 +485,48 @@
             return peerConnection;
         }
 
-        // Iniciar chamada (enviar offer)
+        // ==================== INICIAR CHAMADA ====================
         async function initiateCall(userId) {
             const peerConnection = peerConnections[userId];
             if (!peerConnection) return;
             
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('offer', { offer, to: userId, from: socket.id });
-            updateStatus('Estabelecendo conexão...');
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('offer', { offer, to: userId, from: socket.id });
+                updateStatus('🟡 Estabelecendo conexão...');
+            } catch (error) {
+                console.error('Erro ao criar offer:', error);
+            }
         }
 
-        // Controles de áudio
+        // ==================== CONTROLES ====================
         function toggleAudio() {
             if (localStream) {
                 const audioTrack = localStream.getAudioTracks()[0];
                 if (audioTrack) {
                     audioEnabled = !audioEnabled;
                     audioTrack.enabled = audioEnabled;
-                    document.getElementById('audioBtn').style.opacity = audioEnabled ? '1' : '0.5';
-                    document.getElementById('audioBtn').textContent = audioEnabled ? '🎤' : '🔇';
+                    const btn = document.getElementById('audioBtn');
+                    btn.textContent = audioEnabled ? '🎤' : '🔇';
+                    btn.style.opacity = audioEnabled ? '1' : '0.5';
                 }
             }
         }
 
-        // Controles de vídeo
         function toggleVideo() {
             if (localStream) {
                 const videoTrack = localStream.getVideoTracks()[0];
                 if (videoTrack) {
                     videoEnabled = !videoEnabled;
                     videoTrack.enabled = videoEnabled;
-                    document.getElementById('videoBtn').style.opacity = videoEnabled ? '1' : '0.5';
-                    document.getElementById('videoBtn').textContent = videoEnabled ? '📹' : '📷';
+                    const btn = document.getElementById('videoBtn');
+                    btn.textContent = videoEnabled ? '📹' : '📷';
+                    btn.style.opacity = videoEnabled ? '1' : '0.5';
                 }
             }
         }
 
-        // Encerrar chamada
         function hangUp() {
             // Fechar todas as conexões
             Object.keys(peerConnections).forEach(userId => {
@@ -435,11 +556,10 @@
             // Limpar vídeos
             document.getElementById('localVideo').srcObject = null;
             document.getElementById('remoteVideo').srcObject = null;
-        }
-
-        // Atualizar status
-        function updateStatus(message) {
-            document.getElementById('status').textContent = message;
+            document.getElementById('roomId').value = '';
+            document.getElementById('userName').value = '';
+            
+            updateStatus('Chamada encerrada.');
         }
     </script>
 </body>
