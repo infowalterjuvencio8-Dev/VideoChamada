@@ -2,67 +2,445 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VideoChamada WebRTC</title>
-    <link rel="stylesheet" href="css/style.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .join-screen {
+            padding: 40px;
+            text-align: center;
+        }
+
+        .join-card {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+        }
+
+        .join-card input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        .join-card button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .call-screen {
+            display: none;
+            padding: 20px;
+        }
+
+        .videos {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-label {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .controls button {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .controls button:hover {
+            transform: scale(1.1);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin-top: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .waiting-message {
+            text-align: center;
+            padding: 20px;
+            background: #fff3cd;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .videos {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>📹 VideoChamada WebRTC</h1>
-        </header>
+        <div class="header">
+            <h1>🎥 VideoChamada WebRTC</h1>
+        </div>
 
         <!-- Tela de entrada -->
-        <div id="join-screen" class="screen active">
-            <div class="card">
-                <h2>Entrar em uma chamada</h2>
-                <div class="form-group">
-                    <label for="room-id">ID da Sala:</label>
-                    <input type="text" id="room-id" placeholder="Digite ou crie uma sala" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label for="user-name">Seu Nome:</label>
-                    <input type="text" id="user-name" placeholder="Como você quer ser chamado?" autocomplete="off">
-                </div>
-                <button id="join-btn" class="btn btn-primary">Entrar na Chamada</button>
-                <button id="create-room-btn" class="btn btn-secondary">Criar Nova Sala</button>
+        <div id="joinScreen" class="join-screen">
+            <div class="join-card">
+                <h2>Entrar na VideoChamada</h2>
+                <input type="text" id="roomId" placeholder="ID da Sala" autocomplete="off">
+                <input type="text" id="userName" placeholder="Seu Nome" autocomplete="off">
+                <button onclick="joinRoom()">Entrar na Sala</button>
+                <button onclick="createRoom()" style="background: #6c757d;">Criar Nova Sala</button>
             </div>
         </div>
 
         <!-- Tela da chamada -->
-        <div id="call-screen" class="screen">
-            <div class="video-container">
-                <div class="video-wrapper">
-                    <video id="local-video" autoplay muted playsinline></video>
-                    <div class="video-label">Você</div>
+        <div id="callScreen" class="call-screen">
+            <div class="videos">
+                <div class="video-container">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div class="video-label" id="localLabel">Você</div>
                 </div>
-                <div class="video-wrapper">
-                    <video id="remote-video" autoplay playsinline></video>
-                    <div class="video-label" id="remote-label">Aguardando conexão...</div>
+                <div class="video-container">
+                    <video id="remoteVideo" autoplay playsinline></video>
+                    <div class="video-label" id="remoteLabel">Aguardando...</div>
                 </div>
             </div>
-
             <div class="controls">
-                <button id="toggle-audio" class="control-btn" title="Desligar microfone">
-                    🎤
-                </button>
-                <button id="toggle-video" class="control-btn" title="Desligar câmera">
-                    📹
-                </button>
-                <button id="end-call" class="control-btn btn-danger" title="Encerrar chamada">
-                    📞
-                </button>
+                <button onclick="toggleAudio()" id="audioBtn">🎤</button>
+                <button onclick="toggleVideo()" id="videoBtn">📹</button>
+                <button onclick="hangUp()" class="btn-danger">📞</button>
             </div>
-
-            <div class="connection-status" id="connection-status">
-                Conectando...
-            </div>
+            <div id="status" class="status">Conectando...</div>
         </div>
     </div>
 
-    <!-- Bibliotecas -->
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="js/main.js"></script>
+    <script>
+        // Configuração do WebRTC
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        };
+
+        // Variáveis globais
+        let socket;
+        let localStream;
+        let peerConnections = {}; // Múltiplas conexões
+        let currentRoom = null;
+        let currentUser = null;
+        let audioEnabled = true;
+        let videoEnabled = true;
+
+        // Gerar ID único
+        function generateId() {
+            return Math.random().toString(36).substring(2, 10);
+        }
+
+        // Criar nova sala
+        function createRoom() {
+            const roomId = generateId();
+            document.getElementById('roomId').value = roomId;
+            alert(`Sala criada: ${roomId}\nCompartilhe este código com a outra pessoa!`);
+        }
+
+        // Entrar na sala
+        async function joinRoom() {
+            const roomId = document.getElementById('roomId').value.trim();
+            const userName = document.getElementById('userName').value.trim();
+
+            if (!roomId || !userName) {
+                alert('Preencha o ID da sala e seu nome!');
+                return;
+            }
+
+            currentRoom = roomId;
+            currentUser = userName;
+
+            try {
+                // Conectar ao servidor
+                socket = io();
+                
+                // Configurar eventos do socket
+                setupSocketEvents();
+                
+                // Capturar mídia local
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = stream;
+                document.getElementById('localVideo').srcObject = stream;
+                
+                // Mostrar tela da chamada
+                document.getElementById('joinScreen').style.display = 'none';
+                document.getElementById('callScreen').style.display = 'block';
+                
+                // Entrar na sala
+                socket.emit('join-room', roomId, socket.id);
+                
+                updateStatus('Aguardando outro usuário...');
+                
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('Erro ao acessar câmera/microfone. Verifique as permissões!');
+            }
+        }
+
+        // Configurar eventos do socket
+        function setupSocketEvents() {
+            // Usuários existentes na sala
+            socket.on('existing-users', (users) => {
+                console.log('Usuários existentes:', users);
+                users.forEach(userId => {
+                    createPeerConnection(userId);
+                    initiateCall(userId);
+                });
+            });
+
+            // Novo usuário conectou
+            socket.on('user-connected', (userId) => {
+                console.log('Novo usuário conectado:', userId);
+                createPeerConnection(userId);
+                initiateCall(userId);
+            });
+
+            // Receber offer
+            socket.on('offer', async ({ offer, from }) => {
+                console.log('Recebendo offer de:', from);
+                if (!peerConnections[from]) {
+                    createPeerConnection(from);
+                }
+                await peerConnections[from].setRemoteDescription(new RTCSessionDescription(offer));
+                const answer = await peerConnections[from].createAnswer();
+                await peerConnections[from].setLocalDescription(answer);
+                socket.emit('answer', { answer, to: from, from: socket.id });
+            });
+
+            // Receber answer
+            socket.on('answer', async ({ answer, from }) => {
+                console.log('Recebendo answer de:', from);
+                if (peerConnections[from]) {
+                    await peerConnections[from].setRemoteDescription(new RTCSessionDescription(answer));
+                }
+            });
+
+            // Receber ICE candidate
+            socket.on('ice-candidate', async ({ candidate, from }) => {
+                console.log('Recebendo ICE candidate de:', from);
+                if (peerConnections[from]) {
+                    await peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            });
+
+            // Usuário desconectou
+            socket.on('user-disconnected', (userId) => {
+                console.log('Usuário desconectado:', userId);
+                if (peerConnections[userId]) {
+                    peerConnections[userId].close();
+                    delete peerConnections[userId];
+                }
+                document.getElementById('remoteVideo').srcObject = null;
+                document.getElementById('remoteLabel').textContent = 'Usuário desconectado';
+                updateStatus('Usuário desconectado. Aguardando reconexão...');
+            });
+        }
+
+        // Criar conexão peer
+        function createPeerConnection(userId) {
+            const peerConnection = new RTCPeerConnection(configuration);
+            
+            // Adicionar streams locais
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
+            
+            // Receber streams remotas
+            peerConnection.ontrack = (event) => {
+                console.log('Recebendo stream remota de:', userId);
+                document.getElementById('remoteVideo').srcObject = event.streams[0];
+                document.getElementById('remoteLabel').textContent = 'Conectado';
+                updateStatus('Chamada em andamento!');
+            };
+            
+            // ICE candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('ice-candidate', {
+                        candidate: event.candidate,
+                        to: userId,
+                        from: socket.id
+                    });
+                }
+            };
+            
+            // Monitorar conexão
+            peerConnection.onconnectionstatechange = () => {
+                console.log(`Conexão com ${userId}:`, peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    updateStatus('Conectado!');
+                } else if (peerConnection.connectionState === 'failed') {
+                    updateStatus('Falha na conexão');
+                }
+            };
+            
+            peerConnections[userId] = peerConnection;
+            return peerConnection;
+        }
+
+        // Iniciar chamada (enviar offer)
+        async function initiateCall(userId) {
+            const peerConnection = peerConnections[userId];
+            if (!peerConnection) return;
+            
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('offer', { offer, to: userId, from: socket.id });
+            updateStatus('Estabelecendo conexão...');
+        }
+
+        // Controles de áudio
+        function toggleAudio() {
+            if (localStream) {
+                const audioTrack = localStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioEnabled = !audioEnabled;
+                    audioTrack.enabled = audioEnabled;
+                    document.getElementById('audioBtn').style.opacity = audioEnabled ? '1' : '0.5';
+                    document.getElementById('audioBtn').textContent = audioEnabled ? '🎤' : '🔇';
+                }
+            }
+        }
+
+        // Controles de vídeo
+        function toggleVideo() {
+            if (localStream) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoEnabled = !videoEnabled;
+                    videoTrack.enabled = videoEnabled;
+                    document.getElementById('videoBtn').style.opacity = videoEnabled ? '1' : '0.5';
+                    document.getElementById('videoBtn').textContent = videoEnabled ? '📹' : '📷';
+                }
+            }
+        }
+
+        // Encerrar chamada
+        function hangUp() {
+            // Fechar todas as conexões
+            Object.keys(peerConnections).forEach(userId => {
+                if (peerConnections[userId]) {
+                    peerConnections[userId].close();
+                }
+            });
+            
+            // Parar streams locais
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Desconectar socket
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            // Voltar para tela inicial
+            document.getElementById('joinScreen').style.display = 'block';
+            document.getElementById('callScreen').style.display = 'none';
+            
+            // Limpar variáveis
+            peerConnections = {};
+            localStream = null;
+            
+            // Limpar vídeos
+            document.getElementById('localVideo').srcObject = null;
+            document.getElementById('remoteVideo').srcObject = null;
+        }
+
+        // Atualizar status
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+    </script>
 </body>
 </html>
