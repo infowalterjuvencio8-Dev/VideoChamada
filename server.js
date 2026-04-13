@@ -13,77 +13,94 @@ const io = new Server(server, {
 
 app.use(express.static(__dirname));
 
-// Armazenar usuários por sala
+// Armazenar informações das salas
 const rooms = {};
 
 io.on('connection', (socket) => {
     console.log('✅ Cliente conectado:', socket.id);
 
-    // Usuário entra em uma sala
-    socket.on('join', (roomId, userId) => {
+    // Criar ou entrar em uma sala
+    socket.on('join-room', (roomId, userId) => {
         socket.join(roomId);
         
         if (!rooms[roomId]) {
-            rooms[roomId] = [];
+            rooms[roomId] = {
+                users: [],
+                userNames: {}
+            };
         }
         
-        // Verificar se o usuário já está na sala
-        if (!rooms[roomId].includes(socket.id)) {
-            rooms[roomId].push(socket.id);
+        // Adicionar usuário
+        if (!rooms[roomId].users.includes(socket.id)) {
+            rooms[roomId].users.push(socket.id);
+            rooms[roomId].userNames[socket.id] = userId;
         }
         
-        console.log(`📌 ${userId} entrou na sala ${roomId}`);
-        console.log(`👥 Usuários na sala: ${rooms[roomId].length}`);
+        console.log(`📌 ${userId} (${socket.id}) entrou na sala ${roomId}`);
+        console.log(`👥 Usuários na sala: ${rooms[roomId].users.length}`);
         
-        // Se for o segundo usuário, avisar que pode começar
-        if (rooms[roomId].length === 2) {
-            io.to(roomId).emit('ready', rooms[roomId]);
+        // Informar quantos usuários estão na sala
+        socket.emit('room-info', {
+            userCount: rooms[roomId].users.length,
+            users: rooms[roomId].users
+        });
+        
+        // Avisar outros usuários que alguém entrou
+        socket.to(roomId).emit('user-connected', {
+            userId: socket.id,
+            userName: userId
+        });
+        
+        // Se já existem outros usuários, enviar a lista
+        const otherUsers = rooms[roomId].users.filter(id => id !== socket.id);
+        if (otherUsers.length > 0) {
+            socket.emit('existing-users', otherUsers);
         }
-        
-        // Avisar outros usuários na sala
-        socket.to(roomId).emit('user-joined', socket.id, userId);
     });
 
     // Offer (chamada)
-    socket.on('offer', (data) => {
-        console.log(`📞 Offer de ${data.from} para ${data.to}`);
-        socket.to(data.to).emit('offer', {
-            sdp: data.sdp,
-            from: data.from
+    socket.on('offer', ({ offer, to }) => {
+        console.log(`📞 Offer de ${socket.id} para ${to}`);
+        io.to(to).emit('offer', {
+            offer: offer,
+            from: socket.id
         });
     });
 
     // Answer (resposta)
-    socket.on('answer', (data) => {
-        console.log(`📞 Answer de ${data.from} para ${data.to}`);
-        socket.to(data.to).emit('answer', {
-            sdp: data.sdp,
-            from: data.from
+    socket.on('answer', ({ answer, to }) => {
+        console.log(`📞 Answer de ${socket.id} para ${to}`);
+        io.to(to).emit('answer', {
+            answer: answer,
+            from: socket.id
         });
     });
 
-    // ICE Candidate
-    socket.on('ice-candidate', (data) => {
-        console.log(`❄️ ICE de ${data.from} para ${data.to}`);
-        socket.to(data.to).emit('ice-candidate', {
-            candidate: data.candidate,
-            from: data.from
-        });
+    // ICE Candidate (importante!)
+    socket.on('ice-candidate', ({ candidate, to }) => {
+        console.log(`❄️ ICE candidate de ${socket.id} para ${to}`);
+        if (candidate) {
+            io.to(to).emit('ice-candidate', {
+                candidate: candidate,
+                from: socket.id
+            });
+        }
     });
 
-    // Usuário desconectou
+    // Desconexão
     socket.on('disconnect', () => {
         console.log('❌ Cliente desconectado:', socket.id);
         
-        // Remover de todas as salas
         for (const roomId in rooms) {
-            const index = rooms[roomId].indexOf(socket.id);
+            const index = rooms[roomId].users.indexOf(socket.id);
             if (index !== -1) {
-                rooms[roomId].splice(index, 1);
-                io.to(roomId).emit('user-left', socket.id);
+                rooms[roomId].users.splice(index, 1);
+                delete rooms[roomId].userNames[socket.id];
+                
+                socket.to(roomId).emit('user-disconnected', socket.id);
                 console.log(`👋 Usuário ${socket.id} saiu da sala ${roomId}`);
                 
-                if (rooms[roomId].length === 0) {
+                if (rooms[roomId].users.length === 0) {
                     delete rooms[roomId];
                 }
                 break;
@@ -95,5 +112,4 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
-    console.log(`📡 WebSocket ativo e aguardando conexões`);
 });

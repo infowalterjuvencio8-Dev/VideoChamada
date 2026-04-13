@@ -12,8 +12,8 @@
         }
 
         body {
-            font-family: Arial, sans-serif;
-            background: #1a1a2e;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -24,20 +24,19 @@
         .container {
             max-width: 1200px;
             width: 100%;
-            background: #16213e;
+            background: white;
             border-radius: 20px;
             overflow: hidden;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
 
         .header {
-            background: #0f3460;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 20px;
             text-align: center;
         }
 
-        /* Tela de entrada */
         .join-area {
             padding: 40px;
             text-align: center;
@@ -46,17 +45,17 @@
         .join-box {
             max-width: 400px;
             margin: 0 auto;
-            background: #0f3460;
+            background: #f8f9fa;
             padding: 30px;
-            border-radius: 10px;
+            border-radius: 15px;
         }
 
         .join-box input {
             width: 100%;
             padding: 12px;
             margin: 10px 0;
-            border: none;
-            border-radius: 5px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
             font-size: 16px;
         }
 
@@ -64,20 +63,19 @@
             width: 100%;
             padding: 12px;
             margin-top: 10px;
-            background: #e94560;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
             font-size: 16px;
             cursor: pointer;
             font-weight: bold;
         }
 
         .join-box button:hover {
-            background: #ff6b6b;
+            transform: translateY(-2px);
         }
 
-        /* Tela da chamada */
         .call-area {
             display: none;
             padding: 20px;
@@ -130,6 +128,7 @@
             font-size: 24px;
             cursor: pointer;
             transition: all 0.3s;
+            background: #f0f0f0;
         }
 
         .controls button:hover {
@@ -137,7 +136,7 @@
         }
 
         .btn-hangup {
-            background: #e94560;
+            background: #dc3545;
             color: white;
         }
 
@@ -145,10 +144,14 @@
             text-align: center;
             padding: 10px;
             margin-top: 20px;
-            background: #0f3460;
-            border-radius: 5px;
-            color: white;
+            background: #f8f9fa;
+            border-radius: 8px;
             font-size: 14px;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
         }
 
         @media (max-width: 768px) {
@@ -165,18 +168,16 @@
             <p>Conecte-se com áudio e vídeo em tempo real</p>
         </div>
 
-        <!-- Tela de entrada -->
         <div id="joinArea" class="join-area">
             <div class="join-box">
-                <h2 style="color: white; margin-bottom: 20px;">Entrar na Chamada</h2>
+                <h2>📞 Entrar na Chamada</h2>
                 <input type="text" id="roomName" placeholder="Nome da Sala (ex: sala123)" autocomplete="off">
                 <input type="text" id="userName" placeholder="Seu Nome" autocomplete="off">
-                <button onclick="joinCall()">Iniciar Chamada</button>
-                <button onclick="createRoom()" style="background: #533483; margin-top: 5px;">Criar Nova Sala</button>
+                <button onclick="createRoom()" style="background: #6c757d; margin-bottom: 10px;">✨ Criar Nova Sala</button>
+                <button onclick="joinRoom()">🚀 Entrar na Sala</button>
             </div>
         </div>
 
-        <!-- Tela da chamada -->
         <div id="callArea" class="call-area">
             <div class="videos">
                 <div class="video-box">
@@ -189,22 +190,24 @@
                 </div>
             </div>
             <div class="controls">
-                <button onclick="toggleMic()" id="micBtn">🎤</button>
-                <button onclick="toggleCamera()" id="camBtn">📹</button>
-                <button onclick="hangup()" class="btn-hangup">📞</button>
+                <button onclick="toggleAudio()" id="audioBtn">🎤</button>
+                <button onclick="toggleVideo()" id="videoBtn">📹</button>
+                <button onclick="hangUp()" class="btn-hangup">📞</button>
             </div>
-            <div id="status" class="status">🟡 Conectando...</div>
+            <div id="status" class="status">🟡 Inicializando...</div>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         // Configuração WebRTC
-        const config = {
+        const configuration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10
         };
 
         // Variáveis
@@ -213,25 +216,25 @@
         let peerConnection;
         let currentRoom = '';
         let currentUser = '';
-        let remoteUserId = '';
-        let micEnabled = true;
-        let camEnabled = true;
+        let remoteUserId = null;
+        let audioEnabled = true;
+        let videoEnabled = true;
 
-        // Gerar ID
+        // Gerar ID aleatório
         function generateId() {
-            return Math.random().toString(36).substring(2, 8);
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
         }
 
-        // Criar sala
+        // Criar nova sala
         function createRoom() {
             const roomId = generateId();
             document.getElementById('roomName').value = roomId;
             alert(`✅ Sala criada: ${roomId}\n\nCompartilhe este código com a outra pessoa!`);
         }
 
-        // Entrar na chamada
-        async function joinCall() {
-            const roomName = document.getElementById('roomName').value.trim();
+        // Entrar na sala
+        async function joinRoom() {
+            const roomName = document.getElementById('roomName').value.trim().toUpperCase();
             const userName = document.getElementById('userName').value.trim();
 
             if (!roomName) {
@@ -246,6 +249,8 @@
             currentRoom = roomName;
             currentUser = userName;
 
+            updateStatus('🟡 Conectando ao servidor...');
+
             try {
                 // Conectar ao servidor
                 socket = io();
@@ -253,154 +258,197 @@
                 // Configurar eventos
                 setupSocketEvents();
                 
-                // Pegar stream local
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                localStream = stream;
-                document.getElementById('localVideo').srcObject = stream;
+                // Capturar mídia
+                updateStatus('🎥 Solicitando acesso à câmera/microfone...');
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('localLabel').textContent = `👤 ${userName}`;
                 
                 // Mostrar tela da chamada
                 document.getElementById('joinArea').style.display = 'none';
                 document.getElementById('callArea').style.display = 'block';
-                document.getElementById('localLabel').textContent = `👤 ${userName}`;
-                document.getElementById('status').textContent = '🟡 Aguardando outro usuário...';
                 
                 // Entrar na sala
-                socket.emit('join', currentRoom, socket.id);
+                socket.emit('join-room', currentRoom, currentUser);
+                updateStatus('🟡 Aguardando outro usuário...');
                 
             } catch (error) {
-                console.error(error);
+                console.error('Erro:', error);
                 alert('Erro ao acessar câmera/microfone. Verifique as permissões!');
+                updateStatus('❌ Erro ao acessar dispositivos', true);
             }
         }
 
         // Configurar eventos do socket
         function setupSocketEvents() {
             socket.on('connect', () => {
-                console.log('Conectado ao servidor');
+                console.log('✅ Conectado ao servidor');
             });
 
-            socket.on('user-joined', (userId, userName) => {
-                console.log('Usuário entrou:', userId);
-                remoteUserId = userId;
-                createPeerConnection();
-                document.getElementById('status').textContent = '🟡 Estabelecendo conexão...';
+            socket.on('room-info', (info) => {
+                console.log('Info da sala:', info);
+                updateStatus(`🟡 ${info.userCount} usuário(s) na sala`);
             });
 
-            socket.on('ready', (users) => {
-                console.log('Sala pronta, usuários:', users);
+            socket.on('existing-users', (users) => {
+                console.log('Usuários existentes:', users);
+                if (users.length > 0) {
+                    remoteUserId = users[0];
+                    createPeerConnection();
+                    createOffer();
+                }
+            });
+
+            socket.on('user-connected', (data) => {
+                console.log('Novo usuário conectado:', data);
+                if (!remoteUserId) {
+                    remoteUserId = data.userId;
+                    createPeerConnection();
+                    createOffer();
+                }
             });
 
             socket.on('offer', async (data) => {
-                console.log('Recebendo offer');
+                console.log('📞 Recebendo offer de:', data.from);
                 if (!peerConnection) {
                     createPeerConnection();
                 }
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                socket.emit('answer', {
-                    sdp: answer,
-                    to: data.from,
-                    from: socket.id
-                });
-            });
-
-            socket.on('answer', async (data) => {
-                console.log('Recebendo answer');
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp));
-            });
-
-            socket.on('ice-candidate', async (data) => {
-                console.log('Recebendo ICE');
-                if (peerConnection) {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                if (data.offer) {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    socket.emit('answer', {
+                        answer: answer,
+                        to: data.from
+                    });
                 }
             });
 
-            socket.on('user-left', (userId) => {
-                console.log('Usuário saiu:', userId);
+            socket.on('answer', async (data) => {
+                console.log('📞 Recebendo answer de:', data.from);
+                if (peerConnection && data.answer) {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                }
+            });
+
+            socket.on('ice-candidate', async (data) => {
+                console.log('❄️ Recebendo ICE candidate de:', data.from);
+                if (peerConnection && data.candidate) {
+                    try {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        console.log('✅ ICE candidate adicionado com sucesso');
+                    } catch (error) {
+                        console.error('Erro ao adicionar ICE candidate:', error);
+                    }
+                }
+            });
+
+            socket.on('user-disconnected', (userId) => {
+                console.log('🔴 Usuário desconectado:', userId);
                 if (peerConnection) {
                     peerConnection.close();
                     peerConnection = null;
                 }
                 document.getElementById('remoteVideo').srcObject = null;
                 document.getElementById('remoteLabel').textContent = '🔴 Desconectado';
-                document.getElementById('status').textContent = '🔴 O outro usuário saiu. Aguardando...';
-                remoteUserId = '';
+                updateStatus('🔴 O outro usuário saiu. Aguardando...');
+                remoteUserId = null;
             });
         }
 
         // Criar conexão peer
         function createPeerConnection() {
-            peerConnection = new RTCPeerConnection(config);
+            peerConnection = new RTCPeerConnection(configuration);
             
-            // Adicionar stream local
-            localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, localStream);
-            });
+            // Adicionar tracks locais
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
             
-            // Receber stream remoto
+            // Receber tracks remotas
             peerConnection.ontrack = (event) => {
-                console.log('Recebendo stream remoto');
+                console.log('📺 Recebendo stream remota');
                 document.getElementById('remoteVideo').srcObject = event.streams[0];
                 document.getElementById('remoteLabel').textContent = '🟢 Conectado';
-                document.getElementById('status').textContent = '🟢 Chamada em andamento!';
+                updateStatus('🟢 Chamada em andamento!');
             };
             
-            // ICE candidates
+            // Enviar ICE candidates
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate && remoteUserId) {
+                    console.log('❄️ Enviando ICE candidate');
                     socket.emit('ice-candidate', {
                         candidate: event.candidate,
-                        to: remoteUserId,
-                        from: socket.id
+                        to: remoteUserId
                     });
                 }
             };
             
-            // Criar offer se for o primeiro
-            if (remoteUserId) {
-                createOffer();
-            }
+            // Monitorar conexão
+            peerConnection.onconnectionstatechange = () => {
+                console.log('Estado da conexão:', peerConnection.connectionState);
+                if (peerConnection.connectionState === 'connected') {
+                    updateStatus('🟢 Conectado!');
+                } else if (peerConnection.connectionState === 'failed') {
+                    updateStatus('❌ Falha na conexão', true);
+                }
+            };
+            
+            // Monitorar ICE
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('Estado do ICE:', peerConnection.iceConnectionState);
+            };
         }
 
         // Criar offer
         async function createOffer() {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('offer', {
-                sdp: offer,
-                to: remoteUserId,
-                from: socket.id
-            });
+            if (!peerConnection || !remoteUserId) return;
+            
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('offer', {
+                    offer: offer,
+                    to: remoteUserId
+                });
+                updateStatus('🟡 Enviando oferta...');
+            } catch (error) {
+                console.error('Erro ao criar offer:', error);
+            }
         }
 
         // Controles
-        function toggleMic() {
+        function toggleAudio() {
             if (localStream) {
                 const audioTrack = localStream.getAudioTracks()[0];
                 if (audioTrack) {
-                    micEnabled = !micEnabled;
-                    audioTrack.enabled = micEnabled;
-                    document.getElementById('micBtn').textContent = micEnabled ? '🎤' : '🔇';
-                    document.getElementById('micBtn').style.opacity = micEnabled ? '1' : '0.5';
+                    audioEnabled = !audioEnabled;
+                    audioTrack.enabled = audioEnabled;
+                    document.getElementById('audioBtn').textContent = audioEnabled ? '🎤' : '🔇';
+                    document.getElementById('audioBtn').style.opacity = audioEnabled ? '1' : '0.5';
                 }
             }
         }
 
-        function toggleCamera() {
+        function toggleVideo() {
             if (localStream) {
                 const videoTrack = localStream.getVideoTracks()[0];
                 if (videoTrack) {
-                    camEnabled = !camEnabled;
-                    videoTrack.enabled = camEnabled;
-                    document.getElementById('camBtn').textContent = camEnabled ? '📹' : '📷';
-                    document.getElementById('camBtn').style.opacity = camEnabled ? '1' : '0.5';
+                    videoEnabled = !videoEnabled;
+                    videoTrack.enabled = videoEnabled;
+                    document.getElementById('videoBtn').textContent = videoEnabled ? '📹' : '📷';
+                    document.getElementById('videoBtn').style.opacity = videoEnabled ? '1' : '0.5';
                 }
             }
         }
 
-        function hangup() {
+        function hangUp() {
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
@@ -418,7 +466,23 @@
             document.getElementById('remoteVideo').srcObject = null;
             document.getElementById('roomName').value = '';
             document.getElementById('userName').value = '';
-            remoteUserId = '';
+            remoteUserId = null;
+        }
+
+        function updateStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status';
+            if (isError) {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+            } else if (message.includes('andamento')) {
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+            } else {
+                statusDiv.style.background = '#f8f9fa';
+                statusDiv.style.color = '#666';
+            }
         }
     </script>
 </body>
