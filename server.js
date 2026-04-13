@@ -4,95 +4,96 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
 
-// CONFIGURAÇÃO ESPECIAL PARA O RENDER
 const io = new Server(server, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"],
-        credentials: true
-    },
-    transports: ['websocket', 'polling'], // Forçar ambos os transportes
-    allowEIO3: true,
-    pingTimeout: 60000,
-    pingInterval: 25000
+        methods: ["GET", "POST"]
+    }
 });
 
-// Servir arquivos estáticos
 app.use(express.static(__dirname));
 
-// Forçar HTTPS no Render
-app.use((req, res, next) => {
-    if (req.headers['x-forwarded-proto'] !== 'https' && process.env.NODE_ENV === 'production') {
-        return res.redirect('https://' + req.headers.host + req.url);
-    }
-    next();
-});
-
-// Armazenar salas e usuários
-const rooms = new Map();
+// Armazenar usuários por sala
+const rooms = {};
 
 io.on('connection', (socket) => {
-    console.log('🟢 Usuário conectado:', socket.id);
+    console.log('✅ Cliente conectado:', socket.id);
 
-    // Criar ou entrar em uma sala
-    socket.on('join-room', (roomId, userId) => {
+    // Usuário entra em uma sala
+    socket.on('join', (roomId, userId) => {
         socket.join(roomId);
         
-        if (!rooms.has(roomId)) {
-            rooms.set(roomId, []);
+        if (!rooms[roomId]) {
+            rooms[roomId] = [];
         }
         
-        const roomUsers = rooms.get(roomId);
-        
-        if (!roomUsers.includes(userId)) {
-            roomUsers.push(userId);
+        // Verificar se o usuário já está na sala
+        if (!rooms[roomId].includes(socket.id)) {
+            rooms[roomId].push(socket.id);
         }
         
-        console.log(`📌 Usuário ${userId} entrou na sala ${roomId}`);
-        console.log(`👥 Usuários na sala ${roomId}:`, roomUsers);
+        console.log(`📌 ${userId} entrou na sala ${roomId}`);
+        console.log(`👥 Usuários na sala: ${rooms[roomId].length}`);
         
-        socket.to(roomId).emit('user-connected', userId);
-        
-        const otherUsers = roomUsers.filter(id => id !== userId);
-        if (otherUsers.length > 0) {
-            socket.emit('existing-users', otherUsers);
+        // Se for o segundo usuário, avisar que pode começar
+        if (rooms[roomId].length === 2) {
+            io.to(roomId).emit('ready', rooms[roomId]);
         }
-    });
-
-    socket.on('offer', ({ offer, to, from }) => {
-        console.log(`📞 Offer de ${from} para ${to}`);
-        io.to(to).emit('offer', { offer, from });
-    });
-
-    socket.on('answer', ({ answer, to, from }) => {
-        console.log(`📞 Answer de ${from} para ${to}`);
-        io.to(to).emit('answer', { answer, from });
-    });
-
-    socket.on('ice-candidate', ({ candidate, to, from }) => {
-        console.log(`❄️ ICE candidate de ${from} para ${to}`);
-        io.to(to).emit('ice-candidate', { candidate, from });
-    });
-
-    socket.on('disconnect', () => {
-        console.log('🔴 Usuário desconectado:', socket.id);
         
-        rooms.forEach((users, roomId) => {
-            const index = users.indexOf(socket.id);
-            if (index !== -1) {
-                users.splice(index, 1);
-                io.to(roomId).emit('user-disconnected', socket.id);
-                
-                if (users.length === 0) {
-                    rooms.delete(roomId);
-                }
-            }
+        // Avisar outros usuários na sala
+        socket.to(roomId).emit('user-joined', socket.id, userId);
+    });
+
+    // Offer (chamada)
+    socket.on('offer', (data) => {
+        console.log(`📞 Offer de ${data.from} para ${data.to}`);
+        socket.to(data.to).emit('offer', {
+            sdp: data.sdp,
+            from: data.from
         });
+    });
+
+    // Answer (resposta)
+    socket.on('answer', (data) => {
+        console.log(`📞 Answer de ${data.from} para ${data.to}`);
+        socket.to(data.to).emit('answer', {
+            sdp: data.sdp,
+            from: data.from
+        });
+    });
+
+    // ICE Candidate
+    socket.on('ice-candidate', (data) => {
+        console.log(`❄️ ICE de ${data.from} para ${data.to}`);
+        socket.to(data.to).emit('ice-candidate', {
+            candidate: data.candidate,
+            from: data.from
+        });
+    });
+
+    // Usuário desconectou
+    socket.on('disconnect', () => {
+        console.log('❌ Cliente desconectado:', socket.id);
+        
+        // Remover de todas as salas
+        for (const roomId in rooms) {
+            const index = rooms[roomId].indexOf(socket.id);
+            if (index !== -1) {
+                rooms[roomId].splice(index, 1);
+                io.to(roomId).emit('user-left', socket.id);
+                console.log(`👋 Usuário ${socket.id} saiu da sala ${roomId}`);
+                
+                if (rooms[roomId].length === 0) {
+                    delete rooms[roomId];
+                }
+                break;
+            }
+        }
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
-    console.log(`📡 WebSocket pronto para conexões`);
+    console.log(`📡 WebSocket ativo e aguardando conexões`);
 });
