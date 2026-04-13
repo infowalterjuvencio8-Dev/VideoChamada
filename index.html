@@ -154,6 +154,11 @@
             color: #155724;
         }
 
+        .status.waiting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
         @media (max-width: 768px) {
             .videos {
                 grid-template-columns: 1fr;
@@ -171,7 +176,7 @@
         <div id="joinArea" class="join-area">
             <div class="join-box">
                 <h2>📞 Entrar na Chamada</h2>
-                <input type="text" id="roomName" placeholder="Nome da Sala (ex: sala123)" autocomplete="off">
+                <input type="text" id="roomName" placeholder="Nome da Sala (ex: SALA123)" autocomplete="off">
                 <input type="text" id="userName" placeholder="Seu Nome" autocomplete="off">
                 <button onclick="createRoom()" style="background: #6c757d; margin-bottom: 10px;">✨ Criar Nova Sala</button>
                 <button onclick="joinRoom()">🚀 Entrar na Sala</button>
@@ -206,8 +211,7 @@
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' }
-            ],
-            iceCandidatePoolSize: 10
+            ]
         };
 
         // Variáveis
@@ -216,9 +220,10 @@
         let peerConnection;
         let currentRoom = '';
         let currentUser = '';
-        let remoteUserId = null;
+        let remoteSocketId = null;
         let audioEnabled = true;
         let videoEnabled = true;
+        let isInitiator = false;
 
         // Gerar ID aleatório
         function generateId() {
@@ -274,7 +279,7 @@
                 
                 // Entrar na sala
                 socket.emit('join-room', currentRoom, currentUser);
-                updateStatus('🟡 Aguardando outro usuário...');
+                updateStatus('🟡 Aguardando outro usuário...', 'waiting');
                 
             } catch (error) {
                 console.error('Erro:', error);
@@ -289,79 +294,74 @@
                 console.log('✅ Conectado ao servidor');
             });
 
-            socket.on('room-info', (info) => {
-                console.log('Info da sala:', info);
-                updateStatus(`🟡 ${info.userCount} usuário(s) na sala`);
+            socket.on('waiting', () => {
+                console.log('Aguardando outro usuário...');
+                updateStatus('🟡 Aguardando outro usuário entrar...', 'waiting');
             });
 
-            socket.on('existing-users', (users) => {
-                console.log('Usuários existentes:', users);
-                if (users.length > 0) {
-                    remoteUserId = users[0];
-                    createPeerConnection();
-                    createOffer();
+            socket.on('both-connected', (data) => {
+                console.log('Ambos conectados!', data);
+                // O primeiro usuário da lista será o remoto
+                const otherUser = data.users.find(id => id !== socket.id);
+                if (otherUser) {
+                    remoteSocketId = otherUser;
+                    createPeerConnection(true); // Sou o iniciador
                 }
             });
 
-            socket.on('user-connected', (data) => {
-                console.log('Novo usuário conectado:', data);
-                if (!remoteUserId) {
-                    remoteUserId = data.userId;
-                    createPeerConnection();
-                    createOffer();
+            socket.on('user-joined', (userId) => {
+                console.log('Outro usuário entrou:', userId);
+                if (!remoteSocketId) {
+                    remoteSocketId = userId;
+                    createPeerConnection(true); // Sou o iniciador
                 }
             });
 
-            socket.on('offer', async (data) => {
-                console.log('📞 Recebendo offer de:', data.from);
-                if (!peerConnection) {
-                    createPeerConnection();
-                }
-                if (data.offer) {
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+            socket.on('signal', async (data) => {
+                console.log(`📡 Recebendo sinal ${data.type} de ${data.from}`);
+                
+                if (data.type === 'offer') {
+                    if (!peerConnection) {
+                        createPeerConnection(false); // Não sou o iniciador
+                    }
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
                     const answer = await peerConnection.createAnswer();
                     await peerConnection.setLocalDescription(answer);
-                    socket.emit('answer', {
-                        answer: answer,
-                        to: data.from
+                    socket.emit('signal', {
+                        to: data.from,
+                        from: socket.id,
+                        type: 'answer',
+                        signal: answer
                     });
+                } 
+                else if (data.type === 'answer') {
+                    if (peerConnection) {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
+                    }
                 }
-            });
-
-            socket.on('answer', async (data) => {
-                console.log('📞 Recebendo answer de:', data.from);
-                if (peerConnection && data.answer) {
-                    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                }
-            });
-
-            socket.on('ice-candidate', async (data) => {
-                console.log('❄️ Recebendo ICE candidate de:', data.from);
-                if (peerConnection && data.candidate) {
-                    try {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        console.log('✅ ICE candidate adicionado com sucesso');
-                    } catch (error) {
-                        console.error('Erro ao adicionar ICE candidate:', error);
+                else if (data.type === 'candidate') {
+                    if (peerConnection) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.signal));
                     }
                 }
             });
 
-            socket.on('user-disconnected', (userId) => {
-                console.log('🔴 Usuário desconectado:', userId);
+            socket.on('user-left', (userId) => {
+                console.log('Usuário saiu:', userId);
                 if (peerConnection) {
                     peerConnection.close();
                     peerConnection = null;
                 }
+                remoteSocketId = null;
                 document.getElementById('remoteVideo').srcObject = null;
                 document.getElementById('remoteLabel').textContent = '🔴 Desconectado';
-                updateStatus('🔴 O outro usuário saiu. Aguardando...');
-                remoteUserId = null;
+                updateStatus('🔴 O outro usuário saiu. Aguardando...', 'waiting');
             });
         }
 
         // Criar conexão peer
-        function createPeerConnection() {
+        function createPeerConnection(isInitiatorParam) {
+            isInitiator = isInitiatorParam;
             peerConnection = new RTCPeerConnection(configuration);
             
             // Adicionar tracks locais
@@ -381,11 +381,13 @@
             
             // Enviar ICE candidates
             peerConnection.onicecandidate = (event) => {
-                if (event.candidate && remoteUserId) {
+                if (event.candidate && remoteSocketId) {
                     console.log('❄️ Enviando ICE candidate');
-                    socket.emit('ice-candidate', {
-                        candidate: event.candidate,
-                        to: remoteUserId
+                    socket.emit('signal', {
+                        to: remoteSocketId,
+                        from: socket.id,
+                        type: 'candidate',
+                        signal: event.candidate
                     });
                 }
             };
@@ -396,26 +398,28 @@
                 if (peerConnection.connectionState === 'connected') {
                     updateStatus('🟢 Conectado!');
                 } else if (peerConnection.connectionState === 'failed') {
-                    updateStatus('❌ Falha na conexão', true);
+                    updateStatus('❌ Falha na conexão. Tente novamente.', true);
                 }
             };
             
-            // Monitorar ICE
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log('Estado do ICE:', peerConnection.iceConnectionState);
-            };
+            // Se for o iniciador, criar offer
+            if (isInitiator && remoteSocketId) {
+                setTimeout(() => createOffer(), 500);
+            }
         }
 
         // Criar offer
         async function createOffer() {
-            if (!peerConnection || !remoteUserId) return;
+            if (!peerConnection || !remoteSocketId) return;
             
             try {
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
-                socket.emit('offer', {
-                    offer: offer,
-                    to: remoteUserId
+                socket.emit('signal', {
+                    to: remoteSocketId,
+                    from: socket.id,
+                    type: 'offer',
+                    signal: offer
                 });
                 updateStatus('🟡 Enviando oferta...');
             } catch (error) {
@@ -466,22 +470,20 @@
             document.getElementById('remoteVideo').srcObject = null;
             document.getElementById('roomName').value = '';
             document.getElementById('userName').value = '';
-            remoteUserId = null;
+            remoteSocketId = null;
         }
 
-        function updateStatus(message, isError = false) {
+        function updateStatus(message, type = '') {
             const statusDiv = document.getElementById('status');
             statusDiv.textContent = message;
             statusDiv.className = 'status';
-            if (isError) {
+            if (type === 'waiting') {
+                statusDiv.classList.add('waiting');
+            } else if (type === true) {
                 statusDiv.style.background = '#f8d7da';
                 statusDiv.style.color = '#721c24';
             } else if (message.includes('andamento')) {
-                statusDiv.style.background = '#d4edda';
-                statusDiv.style.color = '#155724';
-            } else {
-                statusDiv.style.background = '#f8f9fa';
-                statusDiv.style.color = '#666';
+                statusDiv.classList.add('connected');
             }
         }
     </script>

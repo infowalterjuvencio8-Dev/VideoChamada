@@ -13,94 +13,53 @@ const io = new Server(server, {
 
 app.use(express.static(__dirname));
 
-// Armazenar informações das salas
 const rooms = {};
 
 io.on('connection', (socket) => {
     console.log('✅ Cliente conectado:', socket.id);
 
-    // Criar ou entrar em uma sala
     socket.on('join-room', (roomId, userId) => {
         socket.join(roomId);
         
         if (!rooms[roomId]) {
-            rooms[roomId] = {
-                users: [],
-                userNames: {}
-            };
+            rooms[roomId] = [];
         }
         
-        // Adicionar usuário
-        if (!rooms[roomId].users.includes(socket.id)) {
-            rooms[roomId].users.push(socket.id);
-            rooms[roomId].userNames[socket.id] = userId;
+        if (!rooms[roomId].includes(socket.id)) {
+            rooms[roomId].push(socket.id);
         }
         
-        console.log(`📌 ${userId} (${socket.id}) entrou na sala ${roomId}`);
-        console.log(`👥 Usuários na sala: ${rooms[roomId].users.length}`);
+        console.log(`📌 ${userId} entrou na sala ${roomId}. Total: ${rooms[roomId].length}`);
         
-        // Informar quantos usuários estão na sala
-        socket.emit('room-info', {
-            userCount: rooms[roomId].users.length,
-            users: rooms[roomId].users
-        });
-        
-        // Avisar outros usuários que alguém entrou
-        socket.to(roomId).emit('user-connected', {
-            userId: socket.id,
-            userName: userId
-        });
-        
-        // Se já existem outros usuários, enviar a lista
-        const otherUsers = rooms[roomId].users.filter(id => id !== socket.id);
-        if (otherUsers.length > 0) {
-            socket.emit('existing-users', otherUsers);
+        // Se for o primeiro usuário, apenas aguarda
+        if (rooms[roomId].length === 1) {
+            socket.emit('waiting');
+        } 
+        // Se for o segundo, avisa ambos
+        else if (rooms[roomId].length === 2) {
+            const users = rooms[roomId];
+            io.to(roomId).emit('both-connected', { users });
         }
+        
+        socket.to(roomId).emit('user-joined', socket.id);
     });
 
-    // Offer (chamada)
-    socket.on('offer', ({ offer, to }) => {
-        console.log(`📞 Offer de ${socket.id} para ${to}`);
-        io.to(to).emit('offer', {
-            offer: offer,
-            from: socket.id
-        });
+    socket.on('signal', (data) => {
+        // data = { to, from, type, signal }
+        console.log(`🔄 Signal ${data.type} de ${data.from} para ${data.to}`);
+        io.to(data.to).emit('signal', data);
     });
 
-    // Answer (resposta)
-    socket.on('answer', ({ answer, to }) => {
-        console.log(`📞 Answer de ${socket.id} para ${to}`);
-        io.to(to).emit('answer', {
-            answer: answer,
-            from: socket.id
-        });
-    });
-
-    // ICE Candidate (importante!)
-    socket.on('ice-candidate', ({ candidate, to }) => {
-        console.log(`❄️ ICE candidate de ${socket.id} para ${to}`);
-        if (candidate) {
-            io.to(to).emit('ice-candidate', {
-                candidate: candidate,
-                from: socket.id
-            });
-        }
-    });
-
-    // Desconexão
     socket.on('disconnect', () => {
         console.log('❌ Cliente desconectado:', socket.id);
         
         for (const roomId in rooms) {
-            const index = rooms[roomId].users.indexOf(socket.id);
+            const index = rooms[roomId].indexOf(socket.id);
             if (index !== -1) {
-                rooms[roomId].users.splice(index, 1);
-                delete rooms[roomId].userNames[socket.id];
+                rooms[roomId].splice(index, 1);
+                socket.to(roomId).emit('user-left', socket.id);
                 
-                socket.to(roomId).emit('user-disconnected', socket.id);
-                console.log(`👋 Usuário ${socket.id} saiu da sala ${roomId}`);
-                
-                if (rooms[roomId].users.length === 0) {
+                if (rooms[roomId].length === 0) {
                     delete rooms[roomId];
                 }
                 break;
