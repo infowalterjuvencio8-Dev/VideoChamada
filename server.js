@@ -3,10 +3,30 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
-const io = new Server(server);
+
+// CONFIGURAÇÃO ESPECIAL PARA O RENDER
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'], // Forçar ambos os transportes
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
+});
 
 // Servir arquivos estáticos
 app.use(express.static(__dirname));
+
+// Forçar HTTPS no Render
+app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https' && process.env.NODE_ENV === 'production') {
+        return res.redirect('https://' + req.headers.host + req.url);
+    }
+    next();
+});
 
 // Armazenar salas e usuários
 const rooms = new Map();
@@ -18,14 +38,12 @@ io.on('connection', (socket) => {
     socket.on('join-room', (roomId, userId) => {
         socket.join(roomId);
         
-        // Armazenar informações da sala
         if (!rooms.has(roomId)) {
             rooms.set(roomId, []);
         }
         
         const roomUsers = rooms.get(roomId);
         
-        // Verificar se o usuário já está na sala
         if (!roomUsers.includes(userId)) {
             roomUsers.push(userId);
         }
@@ -33,56 +51,38 @@ io.on('connection', (socket) => {
         console.log(`📌 Usuário ${userId} entrou na sala ${roomId}`);
         console.log(`👥 Usuários na sala ${roomId}:`, roomUsers);
         
-        // Notificar outros usuários que um novo usuário entrou
         socket.to(roomId).emit('user-connected', userId);
         
-        // Enviar para o novo usuário a lista de usuários existentes
         const otherUsers = roomUsers.filter(id => id !== userId);
         if (otherUsers.length > 0) {
             socket.emit('existing-users', otherUsers);
         }
     });
 
-    // Iniciar chamada (offer)
     socket.on('offer', ({ offer, to, from }) => {
         console.log(`📞 Offer de ${from} para ${to}`);
-        io.to(to).emit('offer', {
-            offer: offer,
-            from: from
-        });
+        io.to(to).emit('offer', { offer, from });
     });
 
-    // Responder chamada (answer)
     socket.on('answer', ({ answer, to, from }) => {
         console.log(`📞 Answer de ${from} para ${to}`);
-        io.to(to).emit('answer', {
-            answer: answer,
-            from: from
-        });
+        io.to(to).emit('answer', { answer, from });
     });
 
-    // ICE Candidate
     socket.on('ice-candidate', ({ candidate, to, from }) => {
         console.log(`❄️ ICE candidate de ${from} para ${to}`);
-        io.to(to).emit('ice-candidate', {
-            candidate: candidate,
-            from: from
-        });
+        io.to(to).emit('ice-candidate', { candidate, from });
     });
 
-    // Desconectar
     socket.on('disconnect', () => {
         console.log('🔴 Usuário desconectado:', socket.id);
         
-        // Remover usuário de todas as salas
         rooms.forEach((users, roomId) => {
             const index = users.indexOf(socket.id);
             if (index !== -1) {
                 users.splice(index, 1);
                 io.to(roomId).emit('user-disconnected', socket.id);
-                console.log(`👋 Usuário ${socket.id} saiu da sala ${roomId}`);
                 
-                // Se a sala ficou vazia, remover
                 if (users.length === 0) {
                     rooms.delete(roomId);
                 }
@@ -92,6 +92,7 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+    console.log(`📡 WebSocket pronto para conexões`);
 });
